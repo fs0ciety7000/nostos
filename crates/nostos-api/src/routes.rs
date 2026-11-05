@@ -534,14 +534,28 @@ pub async fn patch_stop(
             "name must be at most 120 characters".into(),
         ));
     }
+    let mut tx = state.db.begin().await?;
+    let trip_id: Option<Uuid> = sqlx::query_scalar("select trip_id from stops where id = $1")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let Some(trip_id) = trip_id else {
+        return Err(ApiError::NotFound("stop"));
+    };
+    // Waits for a running recomputation of the trip, which may replace the stop.
+    stops::lock_trip(&mut tx, trip_id).await?;
     let done = sqlx::query("update stops set name = $2 where id = $1")
         .bind(id)
         .bind(&name)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
     if done.rows_affected() == 0 {
-        return Err(ApiError::NotFound("stop"));
+        return Err(ApiError::Conflict(
+            "the stops of this trip were just recomputed: reload the trip and rename the new stop"
+                .into(),
+        ));
     }
+    tx.commit().await?;
     Ok(Json(json!({ "id": id, "name": name })))
 }
 

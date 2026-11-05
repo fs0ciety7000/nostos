@@ -105,3 +105,41 @@ NOSTOS_TEST_DATABASE_URL=postgres://nostos:nostos@localhost/postgres cargo test 
 ```
 
 Sans cette variable, les tests de l'API sont ignorés.
+
+## Atlas web (étape 1b)
+
+SvelteKit 2 (Svelte 5) dans `web/`, MapLibre GL 5 en projection globe :
+
+- au repos, les continents en points et un halo orangé, la carte Protomaps
+  apparaissant en zoomant ; l'itinéraire porte une lueur qui le parcourt ;
+- choisir une odyssée cadre ses escales, choisir une escale fait voler la caméra
+  jusqu'au lieu et ouvre la galerie, dont l'accent vient de la palette de la vue ;
+- la recette (grain, Color Chrome, tonalités, balance des blancs, plage dynamique)
+  s'affiche comme dans le menu du boîtier ; `?trip=…&stop=…` donne un lien direct.
+
+Le jeton propriétaire est saisi une fois sur `/login` et gardé dans un cookie
+`httpOnly` ; le serveur SvelteKit relaie les appels à l'API, le navigateur ne
+voit jamais le jeton. Configuration : `web/.env.example`.
+
+```bash
+cd web && npm install
+NOSTOS_API_URL=http://127.0.0.1:8080 npm run dev
+```
+
+**Fond de carte** : `scripts/make-basemap.sh` extrait du planet Protomaps les
+régions de `tiles/regions.geojson` (Québec, Lisbonne) avec l'outil officiel
+`pmtiles`, à déposer ensuite sur R2 (`PUBLIC_BASEMAP_URL`). Sans cette variable,
+la route `/basemap.pmtiles` relaie le planet du jour (`BASEMAP_UPSTREAM`), pour
+le développement seulement.
+
+**Tests** :
+
+```bash
+cd web && npm test && npm run check     # unitaires et types
+scripts/e2e.sh                          # bout en bout : base jetable, API, démo, build, Playwright
+```
+
+`scripts/e2e.sh` crée une base PostGIS jetable, lance l'API, envoie un voyage
+de démo (`scripts/seed-demo.py` : aperçus de RAF publics CC0 auxquels exiftool
+donne positions, dates et simulations), sert le build de production et lance
+Playwright sur ordinateur et mobile. Requiert PostgreSQL + PostGIS, exiftool et Node 22.

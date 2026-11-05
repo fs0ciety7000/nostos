@@ -20,14 +20,20 @@ pub const TIME_MATCH_HOURS: i32 = 3;
 /// A renamed stop keeps its name if the recomputed one is this close.
 const NAME_CARRY_M: f64 = 2_000.0;
 
+/// Takes the per-trip lock held for the whole transaction. Recomputation and
+/// renaming both take it, so a rename never lands on a stop being replaced.
+pub async fn lock_trip(tx: &mut sqlx::PgConnection, trip_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 7))")
+        .bind(trip_id)
+        .execute(tx)
+        .await
+        .map(|_| ())
+}
+
 #[allow(clippy::too_many_lines)] // one transaction, step by step
 pub async fn recompute(db: &PgPool, trip_id: Uuid) -> Result<usize, sqlx::Error> {
     let mut tx = db.begin().await?;
-    // Serialise recomputations of the same trip.
-    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 7))")
-        .bind(trip_id)
-        .execute(&mut *tx)
-        .await?;
+    lock_trip(&mut tx, trip_id).await?;
 
     let lat: Option<f64> = sqlx::query_scalar(
         "select avg(ST_Y(geom::geometry)) from photos where trip_id = $1 and status = 'ready' and geom is not null",

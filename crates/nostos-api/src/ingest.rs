@@ -5,7 +5,6 @@
 //! never process the same photo twice. When the last pending photo of a trip
 //! is done, its stops are recomputed.
 
-use std::collections::BTreeSet;
 use std::time::Duration;
 
 use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
@@ -58,15 +57,13 @@ pub fn spawn_workers(state: &AppState, n: usize) {
     }
 }
 
-/// Processes pending photos until the queue is empty, then recomputes the
-/// stops of every trip that has no photo left in flight. Returns how many
-/// photos were processed.
+/// Processes pending photos until the queue is empty. As soon as a trip
+/// has no photo left in flight, its stops are recomputed, without waiting
+/// for other trips in the queue. Returns how many photos were processed.
 pub async fn drain(state: &AppState) -> Result<usize, sqlx::Error> {
-    let mut touched = BTreeSet::new();
     let mut n = 0;
     while let Some(job) = claim(state).await? {
         n += 1;
-        touched.insert(job.trip_id);
         let id = job.id;
         if let Err(e) = process(state, &job).await {
             tracing::warn!(photo = %id, error = %e, "photo failed");
@@ -78,18 +75,23 @@ pub async fn drain(state: &AppState) -> Result<usize, sqlx::Error> {
             .execute(&state.db)
             .await?;
         }
-    }
-    for trip in touched {
-        let busy: bool = sqlx::query_scalar("select exists(select 1 from photos where trip_id = $1 and status in ('pending', 'processing'))")
-            .bind(trip)
-            .fetch_one(&state.db)
-            .await?;
-        if !busy {
-            let count = stops::recompute(&state.db, trip).await?;
-            tracing::info!(trip = %trip, stops = count, "stops recomputed");
-        }
+        recompute_if_settled(state, job.trip_id).await?;
     }
     Ok(n)
+}
+
+async fn recompute_if_settled(state: &AppState, trip: Uuid) -> Result<(), sqlx::Error> {
+    let busy: bool = sqlx::query_scalar(
+        "select exists(select 1 from photos where trip_id = $1 and status in ('pending', 'processing'))",
+    )
+    .bind(trip)
+    .fetch_one(&state.db)
+    .await?;
+    if !busy {
+        let count = stops::recompute(&state.db, trip).await?;
+        tracing::info!(trip = %trip, stops = count, "stops recomputed");
+    }
+    Ok(())
 }
 
 async fn claim(state: &AppState) -> Result<Option<Job>, sqlx::Error> {
