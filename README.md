@@ -132,6 +132,22 @@ régions de `tiles/regions.geojson` (Québec, Lisbonne) avec l'outil officiel
 la route `/basemap.pmtiles` relaie le planet du jour (`BASEMAP_UPSTREAM`), pour
 le développement seulement.
 
+**En place sur Cloudflare** (novembre 2026) :
+
+| Élément | Valeur |
+|---|---|
+| Bucket R2 | `nostos-media` (région ENAM) |
+| Domaine public | `https://nostos-media.fs0ciety.org` |
+| Fond de carte | `tiles/nostos-basemap.pmtiles` : planet Protomaps du 4 novembre 2026, régions de `tiles/regions.geojson`, zoom 0 à 14, 500 Mo |
+| CORS | `GET`/`HEAD` avec `Range`, depuis `https://nostos.fs0ciety.org`, `http://localhost:5173`, `http://127.0.0.1:4173` |
+
+Hors des deux régions, la carte détaillée s'arrête au zoom 6 ; les points des
+continents restent en filigrane jusqu'au zoom 9 pour que la limite se voie peu.
+
+**À régler avant d'envoyer de vraies photos (lot 1c)** : le domaine public sert
+tout le bucket. Les originaux (GPS complet) doivent aller dans un bucket privé
+séparé, seuls les miniatures, aperçus et tuiles restant dans `nostos-media`.
+
 **Tests** :
 
 ```bash
