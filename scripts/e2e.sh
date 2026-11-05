@@ -38,6 +38,8 @@ done
 echo "seeded: $(psql "${ADMIN_URL%/*}/$DB" -tAc "select count(*) from photos where status='ready'") photos ready"
 
 (cd web && npm run -s build >/dev/null)
+# Basemap: the local extract when it exists (scripts/make-basemap.sh), else the planet relay.
+if [ -f tiles/nostos-basemap.pmtiles ]; then export BASEMAP_FILE="$PWD/tiles/nostos-basemap.pmtiles"; echo "basemap: local extract"; fi
 (cd web && NODE_USE_ENV_PROXY=1 BASEMAP_UPSTREAM="${BASEMAP_UPSTREAM:-https://build.protomaps.com/20261104.pmtiles}" NOSTOS_API_URL="http://127.0.0.1:$API_PORT" PORT=$WEB_PORT HOST=127.0.0.1 ORIGIN="http://127.0.0.1:$WEB_PORT" exec node build >"$WORK/web.log" 2>&1) &
 pids+=($!)
 for _ in $(seq 50); do curl -fs -o /dev/null "http://127.0.0.1:$WEB_PORT/login" && break; sleep 0.2; done
