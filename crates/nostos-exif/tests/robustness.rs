@@ -123,3 +123,12 @@ fn jpeg_without_exif_is_reported_as_such() {
     without.extend_from_slice(&with[4 + app1_len..]);
     assert_eq!(nostos_exif::read(&without), Err(nostos_exif::Error::NoExif));
 }
+
+#[test]
+fn raf_preview_range_points_at_the_embedded_jpeg() {
+    let jpeg = fixture("x-t5.jpg");
+    let raf = fake_raf(&jpeg);
+    let (off, len) = nostos_exif::raf_preview_range(&raf[..nostos_exif::HEADER_LEN]).unwrap();
+    assert_eq!(&raf[off as usize..(off + len) as usize], &jpeg[..]);
+    assert!(nostos_exif::raf_preview_range(&jpeg[..nostos_exif::HEADER_LEN]).is_err());
+}
