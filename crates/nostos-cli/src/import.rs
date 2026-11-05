@@ -485,16 +485,38 @@ fn import(o: &Opts) -> Result<bool, String> {
     Ok(failed == 0)
 }
 
+/// Whether the processing of a trip is over, from `GET /trips/{slug}`.
+///
+/// Stops are recomputed a moment after the last photo is processed, so with
+/// photos that have GPS we wait for them to appear, but at most
+/// `STOPS_GRACE` after nothing is in flight: a trip without any GPS photo
+/// never gets stops and must not keep the command waiting.
+fn settled(trip: &Value, idle_for: Duration) -> bool {
+    const STOPS_GRACE: Duration = Duration::from_secs(20);
+    let photos = &trip["photos"];
+    if photos["in_flight"].as_u64().unwrap_or(0) > 0 {
+        return false;
+    }
+    let has_stops = trip["stops"].as_array().is_some_and(|s| !s.is_empty());
+    let with_gps = photos["with_gps"].as_u64().unwrap_or(0);
+    has_stops || with_gps == 0 || idle_for >= STOPS_GRACE
+}
+
 fn wait_for_processing(api: &Api, trip: &str) -> Result<(), String> {
     let started = Instant::now();
+    let mut idle_since: Option<Instant> = None;
     loop {
         let t = api
             .get(&format!("/trips/{trip}"))
             .map_err(|e| format!("following the processing: {e}"))?;
         let in_flight = t["photos"]["in_flight"].as_u64().unwrap_or(0);
-        if in_flight == 0 && t["stops"].as_array().is_some_and(|s| !s.is_empty())
-            || started.elapsed() > Duration::from_secs(1800)
-        {
+        let idle_for = if in_flight == 0 {
+            idle_since.get_or_insert_with(Instant::now).elapsed()
+        } else {
+            idle_since = None;
+            Duration::ZERO
+        };
+        if settled(&t, idle_for) || started.elapsed() > Duration::from_secs(1800) {
             let stops = t["stops"].as_array().cloned().unwrap_or_default();
             println!(
                 "processed: {} ready, {} failed · {} stops · {} km",
@@ -514,9 +536,21 @@ fn wait_for_processing(api: &Api, trip: &str) -> Result<(), String> {
                     s["film_simulation"].as_str().unwrap_or("")
                 );
             }
+            if t["photos"]["with_gps"].as_u64() == Some(0) {
+                println!(
+                    "no photo of this trip has a GPS position, so no stop can be placed on the globe yet.\n\
+                     Fujifilm bodies only record GPS when the camera is paired with the Fujifilm app \
+                     (location sync). The photos are stored; they will be placed once a GPS track \
+                     can be matched to them or they are placed by hand."
+                );
+            }
             return Ok(());
         }
-        println!("  {in_flight} still processing…");
+        if in_flight == 0 {
+            println!("  waiting for the stops…");
+        } else {
+            println!("  {in_flight} still processing…");
+        }
         std::thread::sleep(Duration::from_secs(3));
     }
 }
@@ -615,6 +649,26 @@ mod tests {
         ] {
             assert!(!is_loopback(u), "{u}");
         }
+    }
+
+    #[test]
+    fn waiting_ends_even_without_gps() {
+        let trip = |in_flight: u64, with_gps: u64, stops: usize| json!({ "photos": { "in_flight": in_flight, "with_gps": with_gps }, "stops": vec![json!({}); stops] });
+        let none = Duration::ZERO;
+        assert!(!settled(&trip(2, 5, 0), none), "photos still processing");
+        assert!(
+            settled(&trip(0, 0, 0), none),
+            "no GPS: no stop will ever come"
+        );
+        assert!(
+            !settled(&trip(0, 5, 0), none),
+            "GPS photos: stops are on their way"
+        );
+        assert!(settled(&trip(0, 5, 3), none));
+        assert!(
+            settled(&trip(0, 5, 0), Duration::from_secs(25)),
+            "do not wait forever for stops"
+        );
     }
 
     #[test]
