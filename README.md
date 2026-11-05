@@ -11,18 +11,40 @@ l'itinéraire retracé, et une galerie aux couleurs des recettes de film.
 |---|---|
 | `crates/nostos-exif` | Bibliothèque Rust sans dépendance : GPS, date, exposition et réglages Fujifilm (simulation de film, grain, Color Chrome, tonalités, balance des blancs, plage dynamique) depuis un JPEG ou un RAF. |
 | `crates/nostos-api` | API HTTP (axum) sur PostgreSQL + PostGIS : voyages, envoi des photos, lecture en tâche de fond, miniatures, palette, escales et itinéraire. |
-| `crates/nostos-cli` | `nostos-scan <dossier>` : GeoJSON des photos d'un dossier, triées par date. |
-| `scripts/` | Fabrication des fixtures de test et de leurs références exiftool. |
+| `crates/nostos-cli` | Commande `nostos` : `scan` (GeoJSON d'un dossier, hors ligne) et `import` (envoi d'un dossier à une instance). |
+| `scripts/` | Fixtures de test, démo, tests de bout en bout, extraction du fond de carte. |
 
-## Utilisation
+## Commande `nostos`
 
 ```bash
-cargo run --release -p nostos-cli -- ~/Photos/Quebec -o quebec.geojson
+cargo install --path crates/nostos-cli      # installe la commande nostos
 ```
 
-Les photos sans GPS sont gardées avec `"geometry": null`, pour le recalage
-sur une trace GPX à l'étape suivante. Un résumé (nombre de vues par
-simulation de film) s'affiche sur la sortie d'erreur.
+**Lire un dossier, hors ligne** :
+
+```bash
+nostos scan ~/Photos/Quebec -o quebec.geojson
+```
+
+Les photos sans GPS sont gardées avec `"geometry": null`. Un résumé (nombre de
+vues par simulation de film) s'affiche sur la sortie d'erreur.
+
+**Envoyer un dossier à Nostos** :
+
+```bash
+export NOSTOS_API_URL=https://nostos-api.fs0ciety.org
+export NOSTOS_OWNER_TOKEN=…                  # le jeton propriétaire de l'instance
+nostos import ~/Photos/Quebec --trip quebec-2026 --title "L'été indien" --wait
+```
+
+La commande lit d'abord les photos sur place et annonce ce qu'elle a trouvé
+(GPS, simulations, fichiers illisibles), crée le voyage si `--title` est donné,
+saute les fichiers déjà envoyés (même nom, même taille), envoie en parallèle
+(`--jobs`, 4 par défaut) directement vers R2 avec reprise en cas d'erreur
+réseau, puis avec `--wait` suit le traitement et liste les escales.
+`--dry-run` montre ce qui serait envoyé sans rien envoyer. Relancer la même
+commande reprend là où un envoi s'est arrêté. Le jeton n'est lu que dans
+l'environnement, jamais en argument (il finirait dans l'historique du shell).
 
 ## Principes du lecteur
 
@@ -144,9 +166,11 @@ le développement seulement.
 Hors des deux régions, la carte détaillée s'arrête au zoom 6 ; les points des
 continents restent en filigrane jusqu'au zoom 9 pour que la limite se voie peu.
 
-**À régler avant d'envoyer de vraies photos (lot 1c)** : le domaine public sert
-tout le bucket. Les originaux (GPS complet) doivent aller dans un bucket privé
-séparé, seuls les miniatures, aperçus et tuiles restant dans `nostos-media`.
+**Originaux privés** : le domaine public sert tout le bucket `nostos-media`.
+L'API range donc les originaux (GPS complet) dans un second bucket, sans domaine
+public (`S3_BUCKET_ORIGINALS`), et seulement les miniatures, aperçus et tuiles
+dans `nostos-media` (`S3_BUCKET_MEDIA`). En local, ce sont deux dossiers,
+`originals/` et `media/`, et seul le second est servi.
 
 **Tests** :
 
