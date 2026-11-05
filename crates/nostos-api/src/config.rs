@@ -5,12 +5,16 @@ use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub enum StorageConfig {
-    /// Files on local disk, served by the API itself. For development and tests.
+    /// Files on local disk under `root/originals` and `root/media`, the
+    /// latter served by the API itself. For development and tests.
     Local { root: PathBuf },
-    /// Any S3-compatible bucket; Cloudflare R2 in production.
+    /// S3-compatible buckets; Cloudflare R2 in production. Originals (full
+    /// GPS, never public) and media (thumbnails, previews, public through the
+    /// media domain) live in separate buckets.
     S3 {
         endpoint: String,
-        bucket: String,
+        originals_bucket: String,
+        media_bucket: String,
         access_key_id: String,
         secret_access_key: String,
         region: String,
@@ -63,7 +67,8 @@ impl Config {
             },
             "s3" => StorageConfig::S3 {
                 endpoint: var("S3_ENDPOINT")?,
-                bucket: var("S3_BUCKET")?,
+                originals_bucket: var("S3_BUCKET_ORIGINALS")?,
+                media_bucket: var("S3_BUCKET_MEDIA")?,
                 access_key_id: var("S3_ACCESS_KEY_ID")?,
                 secret_access_key: var("S3_SECRET_ACCESS_KEY")?,
                 region: std::env::var("S3_REGION").unwrap_or_else(|_| "auto".into()),

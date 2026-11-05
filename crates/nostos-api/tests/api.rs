@@ -533,6 +533,53 @@ async fn stop_names_survive_recomputation() {
     assert_eq!(trip["stops"][0]["photos"], 4);
 }
 
+fn contains_file(dir: &std::path::Path, name: &str) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|it| {
+        it.flatten().any(|e| {
+            if e.path().is_dir() {
+                contains_file(&e.path(), name)
+            } else {
+                e.file_name().to_string_lossy() == name
+            }
+        })
+    })
+}
+
+#[tokio::test]
+async fn originals_stay_private_and_files_are_listed() {
+    let Some(stack) = setup().await else { return };
+    let app = &stack.app;
+    post(app, "/trips", json!({ "slug": "p", "title": "P" })).await;
+    let id = upload(
+        app,
+        "p",
+        "DSCF0001.JPG",
+        fuji_jpeg(at(MONTMORENCY, 0.0, "2026:09:15 14:00:00", 0x600)),
+    )
+    .await;
+
+    // The original sits in the private store only; the media store holds derivatives.
+    let root = &stack._dir.0;
+    assert!(contains_file(&root.join("originals"), "original.jpg"));
+    assert!(
+        !contains_file(&root.join("media"), "original.jpg"),
+        "an original leaked into the public media store"
+    );
+    assert!(
+        contains_file(&root.join("media"), "thumb.jpg")
+            && contains_file(&root.join("media"), "preview.jpg")
+    );
+    assert!(!contains_file(&root.join("originals"), "thumb.jpg"));
+
+    let (s, files, _) = call(app, "GET", "/trips/p/files", None, true).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(files[0]["id"], json!(id));
+    assert_eq!(files[0]["file_name"], "DSCF0001.JPG");
+    assert_eq!(files[0]["status"], "ready");
+    assert!(files[0]["byte_size"].as_i64().unwrap() > 1000);
+    assert_eq!(files.as_array().unwrap().len(), 1);
+}
+
 #[tokio::test]
 async fn raf_is_ingested_from_its_preview() {
     let Some(env) = setup().await else { return };

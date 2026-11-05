@@ -146,7 +146,7 @@ async fn process(state: &AppState, job: &Job) -> Result<(), IngestError> {
     let size = job.byte_size as u64;
     let head = state
         .storage
-        .get_range(
+        .get_original_range(
             &job.original_key,
             0..size.min(nostos_exif::HEADER_LEN as u64),
         )
@@ -158,10 +158,16 @@ async fn process(state: &AppState, job: &Job) -> Result<(), IngestError> {
             let end = off.saturating_add(len).min(size);
             (
                 Container::Raf,
-                state.storage.get_range(&job.original_key, off..end).await?,
+                state
+                    .storage
+                    .get_original_range(&job.original_key, off..end)
+                    .await?,
             )
         }
-        Container::Jpeg => (Container::Jpeg, state.storage.get(&job.original_key).await?),
+        Container::Jpeg => (
+            Container::Jpeg,
+            state.storage.get_original(&job.original_key).await?,
+        ),
         Container::Tiff => return Err(IngestError::Tiff),
     };
     let meta = nostos_exif::read(&jpeg)?;
@@ -175,11 +181,11 @@ async fn process(state: &AppState, job: &Job) -> Result<(), IngestError> {
     let preview_key = format!("{base}/preview.jpg");
     state
         .storage
-        .put(&thumb_key, derived.thumb_jpeg.into())
+        .put_media(&thumb_key, derived.thumb_jpeg.into())
         .await?;
     state
         .storage
-        .put(&preview_key, derived.preview_jpeg.into())
+        .put_media(&preview_key, derived.preview_jpeg.into())
         .await?;
 
     let local = meta.captured_at.and_then(naive);

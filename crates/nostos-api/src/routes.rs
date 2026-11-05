@@ -67,7 +67,7 @@ pub async fn media(State(state): State<AppState>, Path(key): Path<String>) -> Ap
     if !state.storage.is_local() || !public {
         return Err(ApiError::NotFound("media"));
     }
-    let data = state.storage.get(&key).await.map_err(|e| match e {
+    let data = state.storage.get_media(&key).await.map_err(|e| match e {
         object_store::Error::NotFound { .. } => ApiError::NotFound("media"),
         other => ApiError::Storage(other),
     })?;
@@ -385,6 +385,28 @@ pub async fn trip_photos(
     ))
 }
 
+/// Every file of a trip, whatever its status: lets an importer skip what it
+/// already sent.
+pub async fn trip_files(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let trip = trip_by_slug(&state, &slug).await?;
+    let rows: Vec<(Uuid, String, i64, String)> = sqlx::query_as(
+        "select id, file_name, byte_size, status from photos where trip_id = $1 order by file_name",
+    )
+    .bind(trip.id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(Value::Array(
+        rows.into_iter()
+            .map(|(id, file_name, byte_size, status)| {
+                json!({ "id": id, "file_name": file_name, "byte_size": byte_size, "status": status })
+            })
+            .collect(),
+    )))
+}
+
 pub async fn get_photo(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -477,7 +499,7 @@ pub async fn put_content(
             body.len()
         )));
     }
-    state.storage.put(&key, body).await?;
+    state.storage.put_original(&key, body).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -486,7 +508,7 @@ pub async fn complete_upload(
     Path(id): Path<Uuid>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let (key, size) = uploading_photo(&state, id).await?;
-    let stored = match state.storage.size(&key).await {
+    let stored = match state.storage.original_size(&key).await {
         Ok(s) => s,
         Err(object_store::Error::NotFound { .. }) => {
             return Err(ApiError::Conflict(

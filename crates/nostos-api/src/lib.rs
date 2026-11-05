@@ -61,6 +61,7 @@ pub fn app(state: AppState) -> Router {
         .route("/trips/{slug}", get(routes::get_trip))
         .route("/trips/{slug}/photos", get(routes::trip_photos))
         .route("/trips/{slug}/route", get(routes::trip_route))
+        .route("/trips/{slug}/files", get(routes::trip_files))
         .route(
             "/trips/{slug}/stops/recompute",
             post(routes::recompute_stops),

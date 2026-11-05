@@ -1,10 +1,13 @@
 //! Object storage: local disk in development, S3/R2 in production.
 //!
-//! Originals are uploaded by the client straight to storage (a presigned
-//! PUT for S3, an authenticated PUT to the API for local disk), so large RAF
-//! files never stream through the API in production.
+//! Two stores, kept apart on purpose:
+//! - **originals**: the files as uploaded, with full GPS. Private; the client
+//!   uploads straight into it (a presigned PUT for S3, an authenticated PUT to
+//!   the API for local disk), so large RAF files never stream through the API.
+//! - **media**: thumbnails and previews, public through the media domain.
 
 use std::ops::Range;
+use std::path::Path as FsPath;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,7 +23,9 @@ use crate::config::StorageConfig;
 
 #[derive(Clone)]
 pub struct Storage {
-    store: Arc<dyn ObjectStore>,
+    originals: Arc<dyn ObjectStore>,
+    media: Arc<dyn ObjectStore>,
+    /// Signs upload URLs into the originals bucket (S3 only).
     signer: Option<Arc<AmazonS3>>,
     /// Absolute base of the API, for local upload URLs.
     api_url: String,
@@ -38,39 +43,46 @@ pub struct UploadTarget {
 
 const UPLOAD_TTL: Duration = Duration::from_secs(60 * 60);
 
+fn local(dir: &FsPath) -> Result<Arc<dyn ObjectStore>, object_store::Error> {
+    std::fs::create_dir_all(dir).map_err(|e| object_store::Error::Generic {
+        store: "local",
+        source: Box::new(e),
+    })?;
+    Ok(Arc::new(LocalFileSystem::new_with_prefix(dir)?))
+}
+
 impl Storage {
     pub fn new(cfg: &StorageConfig, api_url: &str) -> Result<Self, object_store::Error> {
         Ok(match cfg {
-            StorageConfig::Local { root } => {
-                std::fs::create_dir_all(root).map_err(|e| object_store::Error::Generic {
-                    store: "local",
-                    source: Box::new(e),
-                })?;
-                Self {
-                    store: Arc::new(LocalFileSystem::new_with_prefix(root)?),
-                    signer: None,
-                    api_url: api_url.to_string(),
-                }
-            }
+            StorageConfig::Local { root } => Self {
+                originals: local(&root.join("originals"))?,
+                media: local(&root.join("media"))?,
+                signer: None,
+                api_url: api_url.to_string(),
+            },
             StorageConfig::S3 {
                 endpoint,
-                bucket,
+                originals_bucket,
+                media_bucket,
                 access_key_id,
                 secret_access_key,
                 region,
             } => {
-                let s3 = Arc::new(
+                let bucket = |name: &str| {
                     AmazonS3Builder::new()
                         .with_endpoint(endpoint)
-                        .with_bucket_name(bucket)
+                        .with_bucket_name(name)
                         .with_access_key_id(access_key_id)
                         .with_secret_access_key(secret_access_key)
                         .with_region(region)
-                        .build()?,
-                );
+                        .build()
+                        .map(Arc::new)
+                };
+                let originals = bucket(originals_bucket)?;
                 Self {
-                    store: s3.clone(),
-                    signer: Some(s3),
+                    originals: originals.clone(),
+                    media: bucket(media_bucket)?,
+                    signer: Some(originals),
                     api_url: api_url.to_string(),
                 }
             }
@@ -101,27 +113,38 @@ impl Storage {
         })
     }
 
-    pub async fn put(&self, key: &str, data: Bytes) -> Result<(), object_store::Error> {
-        self.store
+    pub async fn put_original(&self, key: &str, data: Bytes) -> Result<(), object_store::Error> {
+        self.originals
             .put(&Path::from(key), PutPayload::from(data))
             .await
             .map(|_| ())
     }
 
-    pub async fn size(&self, key: &str) -> Result<u64, object_store::Error> {
-        Ok(self.store.head(&Path::from(key)).await?.size)
+    pub async fn original_size(&self, key: &str) -> Result<u64, object_store::Error> {
+        Ok(self.originals.head(&Path::from(key)).await?.size)
     }
 
-    pub async fn get(&self, key: &str) -> Result<Bytes, object_store::Error> {
-        self.store.get(&Path::from(key)).await?.bytes().await
+    pub async fn get_original(&self, key: &str) -> Result<Bytes, object_store::Error> {
+        self.originals.get(&Path::from(key)).await?.bytes().await
     }
 
-    pub async fn get_range(
+    pub async fn get_original_range(
         &self,
         key: &str,
         range: Range<u64>,
     ) -> Result<Bytes, object_store::Error> {
-        self.store.get_range(&Path::from(key), range).await
+        self.originals.get_range(&Path::from(key), range).await
+    }
+
+    pub async fn put_media(&self, key: &str, data: Bytes) -> Result<(), object_store::Error> {
+        self.media
+            .put(&Path::from(key), PutPayload::from(data))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn get_media(&self, key: &str) -> Result<Bytes, object_store::Error> {
+        self.media.get(&Path::from(key)).await?.bytes().await
     }
 
     pub fn is_local(&self) -> bool {
