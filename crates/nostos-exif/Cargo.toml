@@ -1,0 +1,20 @@
+[package]
+name = "nostos-exif"
+version = "0.1.0"
+description = "Reads GPS, capture and Fujifilm film-simulation metadata from JPEG and RAF files, reading only the bytes it needs."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true
