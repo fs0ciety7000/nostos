@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "name": "Québec, Saint-Laurent et Gaspésie" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-75.2, 44.9], [-63.6, 44.9], [-63.6, 49.6], [-75.2, 49.6], [-75.2, 44.9]]] } },
+    { "type": "Feature", "properties": { "name": "Lisbonne, Sintra et Cascais" },
+      "geometry": { "type": "Polygon", "coordinates": [[[-9.55, 38.55], [-8.95, 38.55], [-8.95, 38.95], [-9.55, 38.95], [-9.55, 38.55]]] } }
+  ]
+}

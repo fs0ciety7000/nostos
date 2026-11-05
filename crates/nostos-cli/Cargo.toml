@@ -1,18 +1,19 @@
 [package]
 name = "nostos-cli"
-version = "0.1.0"
-description = "Scans a folder of Fujifilm photos and writes their positions and recipes as GeoJSON."
+version = "0.2.0"
+description = "nostos command line: scan a folder of Fujifilm photos to GeoJSON, or import it into a Nostos instance."
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "nostos-scan"
+name = "nostos"
 path = "src/main.rs"
 
 [dependencies]
 nostos-exif = { path = "../nostos-exif", features = ["serde"] }
 serde_json = "1"
+ureq = { version = "2.12", default-features = false, features = ["tls", "json", "proxy-from-env"] }
 
 [lints]
 workspace = true

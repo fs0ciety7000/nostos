@@ -1,3 +1,6 @@
 /target
 /samples-raw
 *.geojson
+/data
+/tiles/*.pmtiles
+!/tiles/regions.geojson

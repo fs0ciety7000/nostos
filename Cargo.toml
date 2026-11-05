@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/nostos-exif", "crates/nostos-cli"]
+members = ["crates/nostos-exif", "crates/nostos-cli", "crates/nostos-api"]
 
 [workspace.package]
 edition = "2021"

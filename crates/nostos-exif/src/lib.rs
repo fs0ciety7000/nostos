@@ -266,6 +266,25 @@ pub fn read_from<R: Read + Seek>(r: &mut R) -> Result<Metadata, Error> {
     }
 }
 
+/// Bytes to fetch from the start of a file to call [`detect`] and
+/// [`raf_preview_range`] (useful with HTTP range requests).
+pub const HEADER_LEN: usize = 160;
+
+/// Detects the container from the first bytes of a file.
+pub fn detect(header: &[u8]) -> Result<Container, Error> {
+    container::detect(header)
+}
+
+/// Byte range `(offset, length)` of the full-size JPEG preview embedded in
+/// a RAF, read from its first [`HEADER_LEN`] bytes. Fetching only this range
+/// gives both the metadata ([`read`]) and a decodable image for thumbnails.
+pub fn raf_preview_range(header: &[u8]) -> Result<(u64, u64), Error> {
+    if container::detect(header)? != Container::Raf {
+        return Err(Error::Malformed("not a RAF file"));
+    }
+    container::raf_jpeg(header).map(|(o, l)| (o as u64, l as u64))
+}
+
 /// Opens and reads a file from disk.
 pub fn read_path(path: impl AsRef<Path>) -> Result<Metadata, Error> {
     let mut f = std::fs::File::open(path)?;
