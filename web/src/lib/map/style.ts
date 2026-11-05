@@ -6,7 +6,7 @@ import type { StyleSpecification, LayerSpecification, ExpressionSpecification } 
 
 export const C = {
 	ground: '#0b0709',
-	earth: '#150b10',
+	earth: '#120a0e',
 	dot: '#f2a27a',
 	safelight: '#ff8a5c',
 	hot: '#fff0dc',
@@ -88,11 +88,13 @@ export function nostosStyle({ basemapUrl, glyphsUrl, lang = 'fr' }: StyleOptions
 				id: 'land-dots',
 				type: 'circle',
 				source: 'dots',
-				maxzoom: DOTS_UNTIL + 0.5,
+				// Past DOTS_UNTIL the dots stay as a faint texture: they keep land readable
+				// beyond the edge of the regional basemap extract.
+				maxzoom: 10,
 				paint: {
 					'circle-color': C.dot,
-					'circle-radius': ['interpolate', ['exponential', 1.6], ['zoom'], 0, 0.9, 3, 1.8, 5, 3],
-					'circle-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.85, DOTS_UNTIL - 1.2, 0.75, DOTS_UNTIL + 0.3, 0],
+					'circle-radius': ['interpolate', ['exponential', 1.6], ['zoom'], 0, 0.9, 3, 1.8, 5, 2.4, 9, 2.6],
+					'circle-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.85, DOTS_UNTIL - 1.2, 0.75, DOTS_UNTIL + 0.3, 0.28, 8.5, 0.2, 10, 0],
 					'circle-blur': 0.25
 				}
 			},
