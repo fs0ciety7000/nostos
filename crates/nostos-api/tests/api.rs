@@ -25,7 +25,7 @@ struct Env {
     app: Router,
     admin_url: String,
     db_name: String,
-    _dir: TempDir,
+    dir: TempDir,
 }
 
 struct TempDir(PathBuf);
@@ -97,7 +97,7 @@ async fn setup() -> Option<Env> {
         app: app(state),
         admin_url,
         db_name,
-        _dir: TempDir(dir),
+        dir: TempDir(dir),
     })
 }
 
@@ -559,7 +559,7 @@ async fn originals_stay_private_and_files_are_listed() {
     .await;
 
     // The original sits in the private store only; the media store holds derivatives.
-    let root = &stack._dir.0;
+    let root = &stack.dir.0;
     assert!(contains_file(&root.join("originals"), "original.jpg"));
     assert!(
         !contains_file(&root.join("media"), "original.jpg"),
