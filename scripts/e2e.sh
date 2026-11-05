@@ -22,7 +22,7 @@ trap cleanup EXIT
 OWNER_SECRET=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
 psql "$ADMIN_URL" -qc "create database $DB" >/dev/null
 python3 scripts/fetch-sample-previews.py
-cargo build -q --release -p nostos-api
+cargo build -q --release -p nostos-api -p nostos-cli
 
 DATABASE_URL="${ADMIN_URL%/*}/$DB" NOSTOS_OWNER_TOKEN="$OWNER_SECRET" NOSTOS_STORAGE_DIR="$WORK/media" \
   NOSTOS_BIND="127.0.0.1:$API_PORT" NOSTOS_PUBLIC_URL="http://127.0.0.1:$API_PORT" \
@@ -30,7 +30,8 @@ DATABASE_URL="${ADMIN_URL%/*}/$DB" NOSTOS_OWNER_TOKEN="$OWNER_SECRET" NOSTOS_STO
 pids+=($!)
 for _ in $(seq 50); do curl -fs "http://127.0.0.1:$API_PORT/health" >/dev/null && break; sleep 0.2; done
 
-NOSTOS_API_URL="http://127.0.0.1:$API_PORT" NOSTOS_OWNER_TOKEN="$OWNER_SECRET" python3 scripts/seed-demo.py >/dev/null
+NOSTOS_API_URL="http://127.0.0.1:$API_PORT" NOSTOS_OWNER_TOKEN="$OWNER_SECRET" python3 scripts/seed-demo.py > "$WORK/seed.log" 2>&1 || { cat "$WORK/seed.log"; exit 1; }
+grep -E "photos \(|sent,|processed:|second import" "$WORK/seed.log"
 for _ in $(seq 120); do
   busy=$(psql "${ADMIN_URL%/*}/$DB" -tAc "select count(*) from photos where status in ('pending','processing')")
   [ "$busy" = 0 ] && break; sleep 0.5

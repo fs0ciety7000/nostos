@@ -60,17 +60,19 @@ def main():
     images = sorted(PREVIEWS.glob("*.jpg"))
     if not images:
         sys.exit(f"no previews in {PREVIEWS}: run scripts/fetch-sample-previews.py first")
+    nostos = ROOT / "target" / "release" / "nostos"
+    if not nostos.exists():
+        sys.exit(f"{nostos} is missing: run cargo build --release -p nostos-cli first")
     tmp = pathlib.Path(tempfile.mkdtemp())
     n = 0
     for slug, title, offset, stops in TRIPS:
-        status, res = call("POST", "/trips", {"slug": slug, "title": title})
-        if status not in (201, 409):
-            sys.exit(f"create trip {slug}: {status} {res}")
+        folder = tmp / slug
+        folder.mkdir()
         for s_i, (place, lat, lon, day, times, film) in enumerate(stops):
             for t_i, hm in enumerate(times):
                 src = images[n % len(images)]
                 n += 1
-                dst = tmp / f"DSCF{2100 + n:04d}.JPG"
+                dst = folder / f"DSCF{2100 + n:04d}.JPG"
                 shutil.copy(src, dst)
                 d = 0.0012 * t_i  # a few hundred metres between shots
                 mode, sat = FILM[film]
@@ -79,21 +81,14 @@ def main():
                                 f"-GPSLongitude={abs(lon - d)}", f"-GPSLongitudeRef={'W' if lon < 0 else 'E'}",
                                 f"-DateTimeOriginal={day} {hm}:00", f"-OffsetTimeOriginal={offset}",
                                 f"-FujiFilm:FilmMode={mode}", f"-FujiFilm:Saturation={sat}", str(dst)], check=True)
-                data = dst.read_bytes()
-                status, res = call("POST", f"/trips/{slug}/uploads", {"file_name": dst.name, "byte_size": len(data)})
-                if status != 201:
-                    sys.exit(f"upload {dst.name}: {status} {res}")
-                up = res["upload"]
-                req = urllib.request.Request(up["url"], data=data, method=up["method"],
-                                             headers={"Authorization": f"Bearer {OWNER}"} if up["requires_owner_token"] else {})
-                with urllib.request.urlopen(req, timeout=300) as r:
-                    assert r.status in (200, 204), r.status
-                status, res = call("POST", f"/photos/{res['photo_id']}/complete", {})
-                if status != 202:
-                    sys.exit(f"complete {dst.name}: {status} {res}")
-                print(f"{slug:15} {place:20} {dst.name} {film}")
+        # The real importer does the sending, so the demo exercises it.
+        subprocess.run([str(nostos), "import", str(folder), "--trip", slug, "--title", title, "--wait"], check=True)
+        again = subprocess.run([str(nostos), "import", str(folder), "--trip", slug], check=True, capture_output=True, text=True)
+        if "nothing to send" not in again.stdout:
+            sys.exit(f"a second import of {slug} should send nothing, it printed:\n{again.stdout}")
+        print(f"{slug}: second import skipped every file")
     shutil.rmtree(tmp)
-    print(f"{n} photos sent; waiting for the API to process them…")
+    print(f"{n} photos sent")
     # Name the stops once they exist (no reverse geocoding yet).
     import time
     for slug, _title, _offset, stops in TRIPS:
